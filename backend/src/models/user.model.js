@@ -1,15 +1,20 @@
 import mongoose from 'mongoose';
 
 const UserSchema = new mongoose.Schema({
-  email: {
+    clerkId: {
+        type: String,
+        required: true,
+        unique: true,
+    },
+    email: {
     type: String,
     required: [true, 'Vui lòng cung cấp email'],
     unique: true,
   },
-  password: {
-    type: String,
-    required: [true, 'Vui lòng cung cấp mật khẩu'],
-  },
+  // password: {
+  //   type: String,
+  //   required: [true, 'Vui lòng cung cấp mật khẩu'],
+  // },
   telegramChatId: {
     type: String,
     default: null,
