@@ -20,6 +20,21 @@ const DeviceSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+
+  // --- CÁC TRƯỜNG ĐƯỢC THÊM ---
+  lastSeen: {
+    type: Date,
+    default: null,
+  },
+  lastMagnitude: {
+    type: Number,
+    default: 0,
+  },
+  lastRssi: {
+    type: Number,
+    default: 0,
+  }
+
 }, { timestamps: true });
 
 export const Device = mongoose.model('Device', DeviceSchema);

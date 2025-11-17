@@ -11,10 +11,6 @@ const UserSchema = new mongoose.Schema({
     required: [true, 'Vui lòng cung cấp email'],
     unique: true,
   },
-  // password: {
-  //   type: String,
-  //   required: [true, 'Vui lòng cung cấp mật khẩu'],
-  // },
   telegramChatId: {
     type: String,
     default: null,

@@ -58,12 +58,12 @@ export function Navbar({ onNavigate, currentPage, unreadAlerts = 0 }: NavbarProp
                 </Badge>
               )}
             </Button>
-            <Button
-              variant={currentPage === "statistics" ? "secondary" : "ghost"}
-              onClick={() => onNavigate("statistics")}
-            >
-              Statistics
-            </Button>
+            {/*<Button*/}
+            {/*  variant={currentPage === "statistics" ? "secondary" : "ghost"}*/}
+            {/*  onClick={() => onNavigate("statistics")}*/}
+            {/*>*/}
+            {/*  Statistics*/}
+            {/*</Button>*/}
               <Button
                   variant={currentPage === "settings" ? "secondary" : "ghost"}
                   onClick={() => onNavigate("settings")}

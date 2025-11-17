@@ -58,3 +58,28 @@ export const updateTelegramId = async (req, res) => {
     res.status(500).json({ message: 'Lỗi máy chủ' });
   }
 };
+
+/**
+ * @controller getUserProfile
+ * @desc Lấy thông tin user (hoặc đồng bộ nếu chưa có)
+ * @route GET /api/user
+ * @access Private
+ */
+export const getUserProfile = async (req, res) => {
+  try {
+    const clerkId = req.auth.userId;
+    let user = await User.findOne({ clerkId });
+
+    if (!user) {
+      // Nếu user chưa có trong CSDL, gọi hàm syncUser để tạo
+      return syncUser(req, res);
+    }
+
+    // Nếu user đã tồn tại, trả về
+    res.status(200).json(user);
+
+  } catch (error) {
+    console.error("Lỗi lấy hồ sơ user:", error);
+    res.status(500).json({ message: 'Lỗi máy chủ' });
+  }
+};

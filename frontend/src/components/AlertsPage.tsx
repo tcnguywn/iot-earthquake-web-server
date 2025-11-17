@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-// import { useAuth } from "@clerk/clerk-react"; // Bỏ comment khi sẵn sàng
-// import { toast } from "sonner"; // Bỏ comment khi sẵn sàng
+import { useAuth } from "@clerk/clerk-react"; // Bỏ comment
+import { toast } from "sonner"; // Bỏ comment
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Input } from "./ui/input";
@@ -23,111 +23,105 @@ interface Alert {
     severity: "low" | "moderate" | "high";
     magnitude: number;
     timestamp: string; // Đã được định dạng (vd: "2024-11-12 14:30:15")
-    duration: number;
-    peakAcceleration: number;
+    level: number;
     read: boolean;
+    // Bỏ duration và peakAcceleration vì model BE không có
 }
 
 // 2. INTERFACE CHO API (Dữ liệu thô từ BE)
-/*
+// Backend (getAllAlerts) trả về DataEntry + populated device
 interface ApiAlert {
-  _id: string;
-  deviceId: string;
-  deviceName: string;
-  location: string;
-  severity: "low" | "moderate" | "high";
-  magnitude: number;
-  timestamp: string; // Kiểu string ISO Date (vd: "2025-11-12T14:30:15.000Z")
-  duration: number;
-  peakAcceleration: number;
-  read: boolean;
+    _id: string;
+    device: {
+        _id: string;
+        name: string;
+        location: string;
+        deviceId: string; // MAC address
+    };
+    magnitude: number;
+    level: number;
+    receivedAt: string; // ISO Date
+    read: boolean;
 }
 
 // Interface cho API Stats
 interface ApiStats {
-  totalAlerts: number;
-  high: number;
-  moderate: number;
-  low: number;
+    totalAlerts: number;
+    high: number;
+    moderate: number;
+    low: number;
+    unreadCount: number;
 }
-*/
 
-// 3. HÀM HELPER (Bỏ comment khi sẵn sàng)
-/*
+// 3. HÀM HELPER
+const levelToSeverity = (level: number): "low" | "moderate" | "high" => {
+    if (level === 3) return "high";
+    if (level === 2) return "moderate";
+    return "low";
+};
+
 const transformApiAlert = (apiAlert: ApiAlert): Alert => ({
-  id: apiAlert._id,
-  deviceId: apiAlert.deviceId,
-  deviceName: apiAlert.deviceName,
-  location: apiAlert.location,
-  severity: apiAlert.severity,
-  magnitude: apiAlert.magnitude,
-  // Định dạng lại ngày giờ
-  timestamp: new Date(apiAlert.timestamp).toLocaleString(),
-  duration: apiAlert.duration,
-  peakAcceleration: apiAlert.peakAcceleration,
-  read: apiAlert.read,
+    id: apiAlert._id,
+    deviceId: apiAlert.device.deviceId,
+    deviceName: apiAlert.device.name,
+    location: apiAlert.device.location || "N/A",
+    severity: levelToSeverity(apiAlert.level),
+    magnitude: apiAlert.magnitude,
+    timestamp: new Date(apiAlert.receivedAt).toLocaleString(), // Định dạng lại ngày giờ
+    level: apiAlert.level,
+    read: apiAlert.read,
 });
-*/
+
 
 export function AlertsPage() {
-    // 4. STATE (Xóa mock data, khởi tạo rỗng)
-    const [alerts, setAlerts] = useState<Alert[]>([]);
+    const [alerts, setAlerts] = useState<Alert[]>([]); // Danh sách gốc
     const [stats, setStats] = useState<ApiStats | null>(null);
-    const [isLoading, setIsLoading] = useState(true); // Mặc định là true
-    // const [error, setError] = useState<string | null>(null); // Bỏ comment khi sẵn sàng
-    // const { getToken } = useAuth(); // Bỏ comment khi sẵn sàng
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const { getToken } = useAuth(); // Bỏ comment
 
     const [filterSeverity, setFilterSeverity] = useState("all");
     const [searchQuery, setSearchQuery] = useState("");
 
-    // 5. LOGIC LẤY DỮ LIỆU (Đã comment)
-    /*
+    // 5. LOGIC LẤY DỮ LIỆU
     useEffect(() => {
-      const loadAlertsData = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-          const token = await getToken();
-          if (!token) throw new Error("Chưa xác thực");
+        const loadAlertsData = async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+                const token = await getToken();
+                if (!token) throw new Error("Chưa xác thực");
 
-          const authHeader = { Authorization: `Bearer ${token}` };
-          const baseUrl = "http://localhost:5001";
+                const authHeader = { Authorization: `Bearer ${token}` };
+                const baseUrl = "http://localhost:5001";
 
-          // Gọi song song 2 API
-          const [alertsRes, statsRes] = await Promise.all([
-            fetch(`${baseUrl}/api/alerts`, { headers: authHeader }),
-            fetch(`${baseUrl}/api/alerts/stats`, { headers: authHeader }),
-          ]);
+                // Gọi song song 2 API
+                const [alertsRes, statsRes] = await Promise.all([
+                    fetch(`${baseUrl}/api/alerts`, { headers: authHeader }),
+                    fetch(`${baseUrl}/api/alerts/stats`, { headers: authHeader }),
+                ]);
 
-          if (!alertsRes.ok || !statsRes.ok) {
-            throw new Error("Không thể tải dữ liệu cảnh báo.");
-          }
+                if (!alertsRes.ok || !statsRes.ok) {
+                    throw new Error("Không thể tải dữ liệu cảnh báo.");
+                }
 
-          const apiAlerts: ApiAlert[] = await alertsRes.json();
-          const apiStats: ApiStats = await statsRes.json();
+                const apiAlerts: ApiAlert[] = await alertsRes.json();
+                const apiStats: ApiStats = await statsRes.json();
 
-          // Cập nhật state
-          setAlerts(apiAlerts.map(transformApiAlert));
-          setStats(apiStats);
+                // Cập nhật state
+                setAlerts(apiAlerts.map(transformApiAlert));
+                setStats(apiStats);
 
-        } catch (err: any) {
-          setError(err.message);
-          toast.error(err.message);
-        } finally {
-          setIsLoading(false);
-        }
-      };
+            } catch (err: any) {
+                setError(err.message);
+                toast.error(err.message);
+            } finally {
+                setIsLoading(false);
+            }
+        };
 
-      loadAlertsData();
+        loadAlertsData();
     }, [getToken]);
-    */
-
-    // *** Giả lập trạng thái Loading ***
-    // Xóa dòng này khi bạn bỏ comment phần useEffect ở trên
-    useEffect(() => {
-        const timer = setTimeout(() => setIsLoading(false), 500); // Giả vờ tải
-        return () => clearTimeout(timer);
-    }, []);
 
 
     const filteredAlerts = alerts.filter((alert) => {
@@ -139,42 +133,43 @@ export function AlertsPage() {
         return matchesSeverity && matchesSearch;
     });
 
-    // 6. HÀM CẬP NHẬT (Đã comment API)
+    // 6. HÀM CẬP NHẬT
     const markAsRead = async (id: string) => {
         // Cập nhật UI ngay lập tức
+        const originalAlerts = [...alerts];
         setAlerts(
             alerts.map((alert) =>
                 alert.id === id ? { ...alert, read: true } : alert
             )
         );
 
-        // GỌI API (Đã comment)
-        /*
+        // GỌI API
         try {
-          const token = await getToken();
-          if (!token) throw new Error("Chưa xác thực");
+            const token = await getToken();
+            if (!token) throw new Error("Chưa xác thực");
 
-          await fetch(`http://localhost:5001/api/alerts/${id}/read`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-          // Không cần làm gì thêm vì UI đã cập nhật
+            const response = await fetch(`http://localhost:5001/api/alerts/${id}/read`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            if (!response.ok) throw new Error("Lỗi máy chủ");
+
+            // Cập nhật lại stats (đặc biệt là unreadCount)
+            if (stats) {
+                setStats({ ...stats, unreadCount: stats.unreadCount - 1 });
+            }
+
         } catch (err: any) {
-          toast.error("Không thể đánh dấu đã đọc. Đang hoàn tác...");
-          // Hoàn tác nếu có lỗi
-          setAlerts(
-            alerts.map((alert) =>
-              alert.id === id ? { ...alert, read: false } : alert
-            )
-          );
+            toast.error("Không thể đánh dấu đã đọc. Đang hoàn tác...");
+            // Hoàn tác nếu có lỗi
+            setAlerts(originalAlerts);
         }
-        */
     };
 
     const getSeverityColor = (severity: string) => {
-        // ... (Hàm này giữ nguyên)
         switch (severity) {
             case "high":
                 return "bg-red-100 text-red-700 border-red-200";
@@ -188,7 +183,6 @@ export function AlertsPage() {
     };
 
     const getSeverityBadgeColor = (severity: string) => {
-        // ... (Hàm này giữ nguyên)
         switch (severity) {
             case "high":
                 return "bg-red-600 text-white";
@@ -204,10 +198,18 @@ export function AlertsPage() {
     // 7. HIỂN THỊ LOADING
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center h-screen">
+            <div className="flex items-center justify-center" style={{ height: 'calc(100vh - 64px)' }}>
                 <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
                 <p className="ml-4 text-lg text-gray-600">Đang tải cảnh báo...</p>
             </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <Card className="m-8 p-12 text-center text-red-500">
+                Lỗi: {error}
+            </Card>
         );
     }
 
@@ -217,10 +219,10 @@ export function AlertsPage() {
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-gray-900 mb-2">Alert History</h1>
-                <p className="text-gray-500">View and manage earthquake detection alerts</p>
+                <p className="text-gray-500">View and manage earthquake detection alerts (Level {'>'} 0)</p>
             </div>
 
-            {/* Stats (Đọc từ state `stats`, mặc định là 0) */}
+            {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                 <Card className="p-6">
                     <p className="text-sm text-gray-500 mb-1">Total Alerts</p>
@@ -240,9 +242,8 @@ export function AlertsPage() {
                 </Card>
             </div>
 
-            {/* Filters (Giữ nguyên) */}
+            {/* Filters */}
             <Card className="p-4 mb-6">
-                {/* ... (Code JSX của Filters giữ nguyên) ... */}
                 <div className="flex flex-col md:flex-row gap-4">
                     <div className="flex-1 relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -259,22 +260,21 @@ export function AlertsPage() {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">All Severities</SelectItem>
-                            <SelectItem value="high">High</SelectItem>
-                            <SelectItem value="moderate">Moderate</SelectItem>
-                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="high">High (3)</SelectItem>
+                            <SelectItem value="moderate">Moderate (2)</SelectItem>
+                            <SelectItem value="low">Low (1)</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
             </Card>
 
-            {/* Alerts List (Giữ nguyên) */}
+            {/* Alerts List */}
             <div className="space-y-4">
                 {filteredAlerts.map((alert) => (
                     <Card
                         key={alert.id}
                         className={`p-6 ${!alert.read ? "border-l-4 border-l-red-600" : ""}`}
                     >
-                        {/* ... (Code JSX của Card giữ nguyên) ... */}
                         <div className="flex items-start justify-between gap-4">
                             <div className="flex items-start gap-4 flex-1">
                                 <div
@@ -300,7 +300,7 @@ export function AlertsPage() {
                                             </div>
                                         </div>
                                         <Badge className={getSeverityBadgeColor(alert.severity)}>
-                                            {alert.severity.toUpperCase()}
+                                            {alert.severity.toUpperCase()} (L{alert.level})
                                         </Badge>
                                     </div>
 
@@ -309,16 +309,8 @@ export function AlertsPage() {
                                             <p className="text-xs text-gray-500 mb-1">Magnitude</p>
                                             <div className="flex items-center gap-1">
                                                 <Activity className="w-4 h-4 text-gray-400" />
-                                                <p className="text-sm">{alert.magnitude}</p>
+                                                <p className="text-sm">{alert.magnitude.toFixed(4)}</p>
                                             </div>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-gray-500 mb-1">Duration</p>
-                                            <p className="text-sm">{alert.duration}s</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-gray-500 mb-1">Peak Acceleration</p>
-                                            <p className="text-sm">{alert.peakAcceleration} m/s²</p>
                                         </div>
                                         <div>
                                             <p className="text-xs text-gray-500 mb-1">Device ID</p>
@@ -344,8 +336,7 @@ export function AlertsPage() {
                 ))}
             </div>
 
-            {/* Trạng thái trống (Giữ nguyên) */}
-            {/* (Vì alerts = [], nó sẽ hiển thị cái này) */}
+            {/* Trạng thái trống */}
             {filteredAlerts.length === 0 && (
                 <Card className="p-12 text-center">
                     <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-gray-300" />

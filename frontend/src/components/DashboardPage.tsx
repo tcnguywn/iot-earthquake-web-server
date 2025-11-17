@@ -3,39 +3,61 @@ import { useAuth } from "@clerk/clerk-react";
 import { toast } from "sonner";
 import { Card } from "./ui/card";
 import { AlertTriangle, Activity, MapPin, Loader2 } from "lucide-react";
-// Bỏ Badge, Wifi, WifiOff, Progress (vì chúng chỉ dùng cho Alerts)
+import { Badge } from "./ui/badge"; // Bỏ comment
+import { formatDistanceToNow } from 'date-fns'; // Dùng thư viện để format time ago
+// (Bạn cần cài: npm install date-fns)
 
-// === 1. ĐỊNH NGHĨA INTERFACE (Phần đang chạy) ===
+// === 1. ĐỊNH NGHĨA INTERFACE ===
 
+// Interface cho Device (giống file trước)
 interface ApiDevice {
     _id: string;
     deviceId: string;
     name: string;
     location: string;
     createdAt: string;
+    // Thêm các trường từ backend (để đầy đủ)
+    status: "online" | "offline";
+    lastMagnitude: number;
+    lastRssi: number;
 }
-
-interface Device {
+interface UiDevice {
     id: string;
     name: string;
     location: string;
     addedDate: string;
 }
 
-// === PHẦN CẦN THÊM CHO ALERTS (ĐANG COMMENT) ===
-/*
-// (Cần import: import { Badge } from "./ui/badge";)
+// Interface cho API Recent Alerts
+// Backend (getRecentAlerts) trả về DataEntry + populated device
+interface ApiRecentAlert {
+    _id: string;
+    magnitude: number;
+    level: number; // 1, 2, or 3
+    receivedAt: string; // ISO date string
+    device: {
+        name: string;
+        location: string;
+    }
+}
 
-// Interface cho API Alerts (giả định)
-interface ApiAlert {
+// Interface cho UI Recent Alerts
+interface UiAlert {
   id: string;
   deviceName: string;
   severity: "low" | "moderate" | "high";
   magnitude: number;
-  time: string; // Backend nên xử lý "2 days ago"
+  time: string; // vd: "5 minutes ago"
 }
 
-// Hàm helper để tạo màu
+// === 2. HÀM HELPERS ===
+
+const levelToSeverity = (level: number): "low" | "moderate" | "high" => {
+    if (level === 3) return "high";
+    if (level === 2) return "moderate";
+    return "low";
+};
+
 const getSeverityColor = (severity: string) => {
   switch (severity) {
     case "high":
@@ -48,33 +70,33 @@ const getSeverityColor = (severity: string) => {
       return "bg-gray-100 text-gray-700 border-gray-200";
   }
 };
-*/
-// ===============================================
 
-const transformApiDeviceToUi = (apiDevice: ApiDevice): Device => ({
+const transformApiDeviceToUi = (apiDevice: ApiDevice): UiDevice => ({
     id: apiDevice.deviceId,
     name: apiDevice.name,
-    location: apiDevice.location,
+    location: apiDevice.location || "N/A",
     addedDate: new Date(apiDevice.createdAt).toLocaleDateString(),
 });
 
+const transformApiAlertToUi = (apiAlert: ApiRecentAlert): UiAlert => ({
+    id: apiAlert._id,
+    deviceName: apiAlert.device.name,
+    severity: levelToSeverity(apiAlert.level),
+    magnitude: apiAlert.magnitude,
+    time: formatDistanceToNow(new Date(apiAlert.receivedAt), { addSuffix: true }),
+});
+
+
 export function DashboardPage() {
-    // === 2. THIẾT LẬP STATE ===
-    const [devices, setDevices] = useState<Device[]>([]);
+    const [devices, setDevices] = useState<UiDevice[]>([]);
+    const [recentAlerts, setRecentAlerts] = useState<UiAlert[]>([]); // Dùng UiAlert
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    // === PHẦN CẦN THÊM CHO ALERTS (ĐANG COMMENT) ===
-    /*
-    const [recentAlerts, setRecentAlerts] = useState<ApiAlert[]>([]);
-    */
-    // ===============================================
-
     const { getToken } = useAuth();
 
-    // === 3. GỌI API (Chỉ gọi /api/devices) ===
+    // === 3. GỌI API (Song song) ===
     useEffect(() => {
-        const loadDevices = async () => {
+        const loadDashboardData = async () => {
             setIsLoading(true);
             setError(null);
             try {
@@ -84,14 +106,27 @@ export function DashboardPage() {
                 const authHeader = { Authorization: `Bearer ${token}` };
                 const baseUrl = "http://localhost:5001";
 
-                const response = await fetch(`${baseUrl}/api/devices`, { headers: authHeader });
+                // Gọi song song 2 API
+                const [devicesRes, alertsRes] = await Promise.all([
+                    fetch(`${baseUrl}/api/devices`, { headers: authHeader }),
+                    fetch(`${baseUrl}/api/alerts/recent`, { headers: authHeader })
+                ]);
 
-                if (!response.ok) {
+                // Xử lý Devices
+                if (!devicesRes.ok) {
                     throw new Error("Không thể tải danh sách thiết bị");
                 }
-
-                const apiDevices: ApiDevice[] = await response.json();
+                const apiDevices: ApiDevice[] = await devicesRes.json();
                 setDevices(apiDevices.map(transformApiDeviceToUi));
+
+                // Xử lý Alerts
+                if (alertsRes.ok) {
+                    const apiAlerts: ApiRecentAlert[] = await alertsRes.json();
+                    setRecentAlerts(apiAlerts.map(transformApiAlertToUi));
+                } else {
+                    // Không chặn nếu chỉ lỗi alert
+                    console.error("Không thể tải cảnh báo gần đây");
+                }
 
             } catch (err: any) {
                 setError(err.message);
@@ -101,43 +136,13 @@ export function DashboardPage() {
             }
         };
 
-        loadDevices();
+        loadDashboardData();
     }, [getToken]);
-
-    // === PHẦN CẦN THÊM CHO ALERTS (ĐANG COMMENT) ===
-    /*
-    useEffect(() => {
-      // Hàm này sẽ lấy alerts (chạy song song với hàm lấy devices)
-      const loadAlerts = async () => {
-        try {
-          const token = await getToken();
-          if (!token) return; // Không cần báo lỗi, chỉ âm thầm thất bại
-
-          const authHeader = { Authorization: `Bearer ${token}` };
-          const baseUrl = "http://localhost:5001";
-
-          const res = await fetch(`${baseUrl}/api/alerts/recent`, { headers: authHeader });
-          if (!res.ok) return;
-
-          const data: ApiAlert[] = await res.json();
-          setRecentAlerts(data);
-
-        } catch (err) {
-          // Không làm gì nếu lỗi, vì đây là phần phụ
-          console.error("Failed to load alerts", err);
-        }
-      };
-
-      loadAlerts();
-    }, [getToken]);
-    */
-    // ===============================================
 
     // === 4. HIỂN THỊ TRẠNG THÁI LOADING / ERROR ===
     if (isLoading) {
-        // ... (Giữ nguyên code loading)
         return (
-            <div className="flex items-center justify-center h-screen">
+            <div className="flex items-center justify-center" style={{ height: 'calc(100vh - 64px)' }}>
                 <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
                 <p className="ml-4 text-lg text-gray-600">Đang tải dữ liệu Dashboard...</p>
             </div>
@@ -145,7 +150,6 @@ export function DashboardPage() {
     }
 
     if (error) {
-        // ... (Giữ nguyên code error)
         return (
             <div className="container mx-auto px-4 py-8 max-w-7xl">
                 <Card className="p-8 text-center bg-red-50 border-red-200">
@@ -163,10 +167,10 @@ export function DashboardPage() {
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-gray-900 mb-2">Dashboard</h1>
-                <p className="text-gray-500">Monitor your earthquake detection devices</p>
+                <p className="text-gray-500">Tổng quan về hệ thống giám sát của bạn</p>
             </div>
 
-            {/* Stats Grid */}
+            {/* Stats Grid (Chỉ 1 cái) */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                 <Card className="p-6 md:col-span-1">
                     <div className="flex items-center justify-between">
@@ -177,13 +181,9 @@ export function DashboardPage() {
                         <Activity className="w-10 h-10 text-blue-600" />
                     </div>
                 </Card>
-                {/* Đã xóa 3 thẻ Stats còn lại */}
             </div>
 
-            {/* Sửa đổi layout:
-        - Thêm 'lg:grid-cols-3' để chia cột
-        - Bọc 'Your Devices' trong 'lg:col-span-2'
-      */}
+            {/* Layout 2 cột */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 {/* Cột 1: Danh sách thiết bị (CHIẾM 2 PHẦN) */}
@@ -191,7 +191,6 @@ export function DashboardPage() {
                     <Card className="p-6">
                         <h2 className="text-gray-900 mb-4">Your Devices</h2>
                         <div className="space-y-4">
-
                             {devices.map((device) => (
                                 <div
                                     key={device.id}
@@ -199,14 +198,11 @@ export function DashboardPage() {
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1">
-
                                             <h3 className="text-sm font-medium">{device.name}</h3>
-
                                             <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
                                                 <MapPin className="w-3 h-3" />
                                                 {device.location}
                                             </div>
-
                                             <div className="grid grid-cols-2 gap-4 mt-3">
                                                 <div>
                                                     <p className="text-xs text-gray-500 mb-1">Device ID</p>
@@ -217,12 +213,10 @@ export function DashboardPage() {
                                                     <p className="text-sm">{device.addedDate}</p>
                                                 </div>
                                             </div>
-
                                         </div>
                                     </div>
                                 </div>
                             ))}
-
                             {devices.length === 0 && (
                                 <div className="text-center py-8 text-gray-400">
                                     <Activity className="w-12 h-12 mx-auto mb-2 opacity-50" />
@@ -234,47 +228,43 @@ export function DashboardPage() {
                     </Card>
                 </div>
 
-                {/* === PHẦN CẦN THÊM CHO ALERTS (ĐANG COMMENT) === */}
                 {/* Cột 2: Cảnh báo gần đây (CHIẾM 1 PHẦN) */}
-                {/*
-        <div className="lg:col-span-1">
-          <Card className="p-6">
-            <h2 className="text-gray-900 mb-4">Recent Alerts</h2>
-            <div className="space-y-3">
-              {recentAlerts.map((alert) => (
-                <div
-                  key={alert.id}
-                  className={`p-3 rounded-lg border ${getSeverityColor(
-                    alert.severity
-                  )}`}
-                >
-                  <div className="flex items-start gap-2 mb-2">
-                    <AlertTriangle className="w-4 h-4 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm">{alert.deviceName}</p>
-                      <p className="text-xs opacity-75">{alert.time}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span>Magnitude: {alert.magnitude}</span>
-                    <Badge variant="secondary" className="capitalize">
-                      {alert.severity}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+                <div className="lg:col-span-1">
+                  <Card className="p-6">
+                    <h2 className="text-gray-900 mb-4">Recent Alerts (Level {'>='} 2)</h2>
+                    <div className="space-y-3">
+                      {recentAlerts.map((alert) => (
+                        <div
+                          key={alert.id}
+                          className={`p-3 rounded-lg border ${getSeverityColor(
+                            alert.severity
+                          )}`}
+                        >
+                          <div className="flex items-start gap-2 mb-2">
+                            <AlertTriangle className="w-4 h-4 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium">{alert.deviceName}</p>
+                              <p className="text-xs opacity-75">{alert.time}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span>Magnitude: {alert.magnitude.toFixed(4)}</span>
+                            <Badge variant="secondary" className="capitalize">
+                              {alert.severity}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
 
-              {recentAlerts.length === 0 && (
-                <div className="text-center py-8 text-gray-400">
-                  <AlertTriangle className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No recent alerts</p>
+                      {recentAlerts.length === 0 && (
+                        <div className="text-center py-8 text-gray-400">
+                          <AlertTriangle className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No recent alerts</p>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
                 </div>
-              )}
-            </div>
-          </Card>
-        </div>
-        */}
-                {/* =============================================== */}
 
             </div>
         </div>

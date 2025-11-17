@@ -4,13 +4,12 @@ import { config } from 'dotenv';
 import { clerkMiddleware } from '@clerk/express';
 import connectToDB from './lib/db.js';
 
-// Tải biến môi trường
 config();
 
-// Import các bộ định tuyến (routes)
 import dataRoute from "./routes/data.route.js";
 import userRoute from "./routes/user.route.js";
 import deviceRoute from "./routes/device.route.js";
+import alertRoute from "./routes/alert.route.js";
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -21,7 +20,6 @@ app.use(express.json());
 
 // === CÁC ROUTE CÔNG KHAI (Public) ===
 // Endpoint này KHÔNG cần Clerk, vì ESP32 không thể đăng nhập
-// Nó sẽ có logic bảo mật riêng (kiểm tra deviceId)
 app.use('/api/data', dataRoute);
 
 // === CÁC ROUTE BẢO VỆ (Protected) ===
@@ -29,7 +27,7 @@ app.use(clerkMiddleware());
 
 app.use('/api/devices', deviceRoute);
 app.use('/api/user', userRoute);
-// Thêm các route khác cho người dùng ở đây (ví dụ: /api/stats)
+app.use('/api/alerts', alertRoute); // --- THÊM DÒNG NÀY ---
 
 // Route chào mừng
 app.get('/', (req, res) => {

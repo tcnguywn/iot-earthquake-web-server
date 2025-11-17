@@ -21,6 +21,12 @@ const DataEntrySchema = new mongoose.Schema({
     y: Number,
     z: Number,
   },
+
+  read: {
+    type: Boolean,
+    default: false,
+  }
+
 }, {
   timestamps: { createdAt: 'receivedAt' }
 });

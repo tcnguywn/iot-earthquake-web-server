@@ -1,6 +1,6 @@
 import { Device } from '../models/device.model.js';
 import { DataEntry } from '../models/dataEntry.model.js';
-import { User } from '../models/user.model.js'; // Cần import User để populate
+import { User } from '../models/user.model.js';
 import { sendTelegramAlert } from '../lib/telegram.js';
 
 /**
@@ -20,7 +20,6 @@ export const logEarthquakeData = async (req, res) => {
 
   try {
     // 2. Tìm thiết bị VÀ lấy thông tin owner (bao gồm telegramChatId)
-    // Dùng populate để lấy thông tin từ collection 'User'
     const device = await Device.findOne({ deviceId: device_id }).populate({
       path: 'owner',
       model: 'User',
@@ -33,8 +32,17 @@ export const logEarthquakeData = async (req, res) => {
       return res.status(401).json({ message: 'Thiết bị không hợp lệ hoặc chưa được đăng ký' });
     }
 
-    // 4. Lưu dữ liệu vào CSDL
-    await DataEntry.create({
+    // --- LOGIC CẬP NHẬT "HEARTBEAT" ---
+    // Cập nhật trạng thái mới nhất cho thiết bị
+    device.lastSeen = new Date();
+    device.lastMagnitude = data.magnitude;
+    device.lastRssi = data.rssi;
+    // Chạy song song, không cần await để tăng tốc độ phản hồi
+    device.save();
+    // --- KẾT THÚC THÊM ---
+
+    // 4. Lưu dữ liệu vào CSDL (chạy song song)
+    DataEntry.create({
       device: device._id,
       timestamp: data.timestamp,
       magnitude: data.magnitude,
@@ -43,20 +51,29 @@ export const logEarthquakeData = async (req, res) => {
       rssi: data.rssi,
       linear: data.linear,
       raw: data.raw,
+      read: data.level <= 0,
     });
-
-    // 5. Gửi thông báo Telegram nếu có rung chấn (ví dụ: cấp 2 trở lên)
-    if (data.level >= 2 && device.owner && device.owner.telegramChatId) {
-      // Chạy bất đồng bộ, không cần chờ
-      await sendTelegramAlert(
-          device.owner.telegramChatId,
-          device.name,
-          data.level,
-          data.magnitude
-      );
+    console.log(`[DEBUG] Dữ liệu nhận được: Level ${data.level}, Magnitude ${data.magnitude}`);
+    if (device.owner && device.owner.telegramChatId) {
+        console.log(`[DEBUG] Owner có Telegram ID: ${device.owner.telegramChatId}`);
+    } else {
+        console.log("[DEBUG] Owner KHÔNG có Telegram ID hoặc chưa populate được.");
     }
 
-    // 6. Phản hồi thành công cho ESP32
+    // 5. Gửi thông báo Telegram nếu có rung chấn (ví dụ: cấp 2 trở lên)
+      if (data.level === 3 && device.owner && device.owner.telegramChatId) { // <-- SỬA LẠI ĐIỀU KIỆN NÀY
+          // Chạy bất đồng bộ
+          sendTelegramAlert(
+              device.owner.telegramChatId,
+              device.name,
+              device.location,
+              data.level,
+              data.magnitude
+          );
+      }
+
+
+    // 6. Phản hồi thành công ngay cho ESP32
     return res.status(201).json({ message: 'Đã ghi nhận dữ liệu' });
 
   } catch (error) {

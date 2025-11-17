@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navbar } from "./components/Navbar";
-// import { LoginPage } from "./components/LoginPage";
 import { DashboardPage } from "./components/DashboardPage";
 import { DevicesPage } from "./components/DevicesPage";
 import { AlertsPage } from "./components/AlertsPage";
-import { StatisticsPage } from "./components/StatisticsPage";
+// import { StatisticsPage } from "./components/StatisticsPage"; // Xóa
 import { SettingsPage } from "./components/SettingsPage";
 import { Toaster } from "./components/ui/sonner";
 import {
@@ -12,7 +11,9 @@ import {
     SignedIn,
     SignedOut,
     SignIn,
+    useAuth, // Thêm useAuth
 } from "@clerk/clerk-react";
+import { Loader2 } from "lucide-react";
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -20,11 +21,19 @@ if (!PUBLISHABLE_KEY) {
     throw new Error("Vui lòng thêm VITE_CLERK_PUBLISHABLE_KEY vào file .env");
 }
 
-type Page = "dashboard" | "devices" | "alerts" | "statistics" | "settings";
+type Page = "dashboard" | "devices" | "alerts" | "settings";
+
+// Interface cho API Stats
+interface ApiStats {
+    totalAlerts: number;
+    high: number;
+    moderate: number;
+    low: number;
+    unreadCount: number; // Đây là cái chúng ta cần
+}
 
 export default function App() {
     return (
-        // 4. Bọc toàn bộ ứng dụng trong <ClerkProvider>
         <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
             <AppContent />
             <Toaster />
@@ -35,12 +44,9 @@ export default function App() {
 function AppContent() {
     return (
         <>
-            {/* 5. Dùng <SignedIn> để hiển thị UI khi đã đăng nhập */}
             <SignedIn>
                 <MainApplication />
             </SignedIn>
-
-            {/* 6. Dùng <SignedOut> để hiển thị UI khi chưa đăng nhập */}
             <SignedOut>
                 <LoginPage />
             </SignedOut>
@@ -51,39 +57,86 @@ function AppContent() {
 function LoginPage() {
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-            {/* Component <SignIn> của Clerk sẽ xử lý toàn bộ logic đăng nhập,
-        bao gồm cả việc gọi API backend và tự động "xác thực"
-        cho <SignedIn> khi thành công.
-      */}
-            <SignIn />
+            {/* Sử dụng giao diện tùy chỉnh của Clerk */}
+            <SignIn routing="path" path="/" />
         </div>
     );
 }
 
 function MainApplication() {
     const [currentPage, setCurrentPage] = useState<Page>("dashboard");
+    const [unreadAlerts, setUnreadAlerts] = useState(0); // State cho số thông báo
+    const [isLoading, setIsLoading] = useState(true); // Thêm state loading
+    const { getToken } = useAuth();
+
+    // Hook để lấy Stats (bao gồm unreadCount)
+    useEffect(() => {
+        let isMounted = true;
+        let intervalId: NodeJS.Timeout | null = null;
+
+        const fetchStats = async () => {
+            const token = await getToken();
+            if (!token || !isMounted) return;
+
+            try {
+                const response = await fetch("http://localhost:5001/api/alerts/stats", {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!response.ok) throw new Error("Failed to fetch stats");
+
+                const stats: ApiStats = await response.json();
+
+                if (isMounted) {
+                    setUnreadAlerts(stats.unreadCount);
+                }
+            } catch (error) {
+                console.error("Error fetching alert stats:", error);
+                // Có thể toast lỗi ở đây nếu cần
+            } finally {
+                if (isMounted) setIsLoading(false); // Dừng loading khi xong
+            }
+        };
+
+        fetchStats(); // Chạy lần đầu
+
+        // Tự động cập nhật mỗi 30 giây
+        intervalId = setInterval(fetchStats, 10000);
+
+        // Cleanup
+        return () => {
+            isMounted = false;
+            if (intervalId) clearInterval(intervalId);
+        };
+    }, [getToken, currentPage]); // Chạy lại khi đổi trang (để đảm bảo)
 
     const handleNavigate = (page: string) => {
-        // 7. Logic điều hướng không cần xử lý 'login' nữa
         setCurrentPage(page as Page);
+        // Khi người dùng click vào trang Alerts, reset số thông báo về 0 (giả định)
+        if (page === 'alerts') {
+            setUnreadAlerts(0);
+        }
     };
+
+    // Hiển thị loading screen khi đang xác thực user và lấy data lần đầu
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-gray-50">
             <Navbar
                 onNavigate={handleNavigate}
                 currentPage={currentPage}
-                unreadAlerts={2}
-                // 8. (Khuyến nghị) Thêm <UserButton> của Clerk vào Navbar
-                // Nó sẽ tự động hiển thị avatar và nút đăng xuất.
-                // Bạn sẽ cần sửa file components/Navbar.tsx để thêm component này.
-                // Ví dụ: <div className="ml-auto"><UserButton afterSignOutUrl="/" /></div>
+                unreadAlerts={unreadAlerts} // Truyền state động
             />
             <main>
                 {currentPage === "dashboard" && <DashboardPage />}
                 {currentPage === "devices" && <DevicesPage />}
                 {currentPage === "alerts" && <AlertsPage />}
-                {currentPage === "statistics" && <StatisticsPage />}
                 {currentPage === "settings" && <SettingsPage />}
             </main>
         </div>
