@@ -1,9 +1,5 @@
 {
   "version": 2,
-  "projects": {
-    "frontend": {},
-    "backend": {}
-  },
   "builds": [
     {
       "src": "backend/index.js",
